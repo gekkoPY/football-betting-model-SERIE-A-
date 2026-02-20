@@ -1,0 +1,107 @@
+import pandas as pd
+
+def load_data(matches_file, players_file):
+    """Loads and cleans the match history and player statistics data."""
+    # Load Match Data
+    df_matches = pd.read_csv(matches_file)
+    
+    # Load and Clean Player Data (Assumes FBref CSV export format)
+    df_players = pd.read_csv(players_file, header=6)
+    
+    # Deduplicate columns and handle empty goal values
+    df_players = df_players.loc[:, ~df_players.columns.duplicated()].copy()
+    df_players['Gls'] = pd.to_numeric(df_players['Gls'], errors='coerce').fillna(0)
+    df_players_clean = df_players[['Player', 'Squad', 'Pos', 'MP', 'Gls']].copy()
+    
+    # Standardize team names (e.g., FBref uses 'Hellas Verona', match data uses 'Verona')
+    df_players_clean.loc[df_players_clean['Squad'] == 'Hellas Verona', 'Squad'] = 'Verona'
+    
+    return df_matches, df_players_clean
+
+def get_match_summary(home_team, away_team, df_matches, df_players, missing_home=[], missing_away=[]):
+    """Generates a contextual match outlook based on baselines and player dependencies."""
+    # 1. BASELINES
+    home_games = df_matches[df_matches['HomeTeam'] == home_team]
+    h_played = len(home_games)
+    h_wins = len(home_games[home_games['FTR'] == 'H'])
+    h_draws = len(home_games[home_games['FTR'] == 'D'])
+    h_losses = len(home_games[home_games['FTR'] == 'A'])
+    h_goals = home_games['FTHG'].mean() if h_played > 0 else 0
+    h_shots = home_games['HST'].mean() if h_played > 0 else 0
+    
+    away_games = df_matches[df_matches['AwayTeam'] == away_team]
+    a_played = len(away_games)
+    a_wins = len(away_games[away_games['FTR'] == 'A'])
+    a_draws = len(away_games[away_games['FTR'] == 'D'])
+    a_losses = len(away_games[away_games['FTR'] == 'H'])
+    a_goals = away_games['FTAG'].mean() if a_played > 0 else 0
+    a_shots = away_games['AST'].mean() if a_played > 0 else 0
+    
+    # 2. DEPENDENCY RATING CALCULATION
+    def get_team_scorers(team_name):
+        team_p = df_players[df_players['Squad'] == team_name].copy()
+        total_g = team_p['Gls'].sum()
+        scorers = team_p[team_p['Gls'] > 0].sort_values(by='Gls', ascending=False)
+        if total_g > 0:
+            scorers['Dep %'] = (scorers['Gls'] / total_g) * 100
+        else:
+            scorers['Dep %'] = 0
+        return scorers
+        
+    h_scorers = get_team_scorers(home_team)
+    a_scorers = get_team_scorers(away_team)
+    
+    h_top = h_scorers.head(3)
+    a_top = a_scorers.head(3)
+    
+    # 3. BUILD THE OUTPUT
+    out = []
+    out.append(f"### 🔮 MATCH OUTLOOK: {home_team.upper()} (Home) vs {away_team.upper()} (Away)\n")
+    
+    # Home Block
+    out.append(f"**🏠 {home_team.upper()} BASELINE:**")
+    out.append(f"* **Home Record:** {h_wins}W - {h_draws}D - {h_losses}L")
+    out.append(f"* **Averages:** {h_goals:.2f} Goals | {h_shots:.2f} Shots on Target")
+    if not h_top.empty:
+        top_h_str = ", ".join([f"{row['Player']} ({int(row['Gls'])} goals, {row['Dep %']:.1f}%)" for _, row in h_top.iterrows()])
+        out.append(f"* **Top Threats:** {top_h_str}")
+    
+    if missing_home:
+        missing_impact = sum([h_scorers[h_scorers['Player'] == p]['Dep %'].values[0] if not h_scorers[h_scorers['Player'] == p].empty else 0 for p in missing_home])
+        out.append(f"* **🚨 ABSENCE IMPACT:** MISSING {', '.join(missing_home)} (Losing {missing_impact:.1f}% of season goal output)")
+    
+    out.append("")
+    
+    # Away Block
+    out.append(f"**✈️ {away_team.upper()} BASELINE:**")
+    out.append(f"* **Away Record:** {a_wins}W - {a_draws}D - {a_losses}L")
+    out.append(f"* **Averages:** {a_goals:.2f} Goals | {a_shots:.2f} Shots on Target")
+    if not a_top.empty:
+        top_a_str = ", ".join([f"{row['Player']} ({int(row['Gls'])} goals, {row['Dep %']:.1f}%)" for _, row in a_top.iterrows()])
+        out.append(f"* **Top Threats:** {top_a_str}")
+    
+    if missing_away:
+        missing_impact = sum([a_scorers[a_scorers['Player'] == p]['Dep %'].values[0] if not a_scorers[a_scorers['Player'] == p].empty else 0 for p in missing_away])
+        out.append(f"* **🚨 ABSENCE IMPACT:** MISSING {', '.join(missing_away)} (Losing {missing_impact:.1f}% of season goal output)")
+        
+    return "\n".join(out)
+
+if __name__ == "__main__":
+    # --- Configuration ---
+    # Ensure your CSV files are in the same directory as this script.
+    MATCHES_FILE = 'I1.csv'
+    PLAYERS_FILE = 'players stats.csv' 
+    
+    # Load the datasets
+    matches, players = load_data(MATCHES_FILE, PLAYERS_FILE)
+    
+    # --- Run a Prediction ---
+    report = get_match_summary(
+        home_team="Sassuolo", 
+        away_team="Verona", 
+        df_matches=matches, 
+        df_players=players, 
+        missing_away=["Gift Orban"]  # Add injured/suspended players here
+    )
+    
+    print(report)
