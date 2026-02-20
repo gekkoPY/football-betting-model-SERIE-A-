@@ -25,9 +25,10 @@ The Execution: It translates these realities into specific bets (Totals, Results
 📁 Data Requirements
 To run this model, you need two CSV files in the root directory:
 
-I1.csv: Match history (Standard football-data.co.uk format) containing HomeTeam, AwayTeam, FTHG, FTAG, and FTR.
+1) I1.csv: Match history (Standard football-data.co.uk format) containing HomeTeam, AwayTeam, FTHG, FTAG, and FTR.
 
-players stats.csv: An FBref-style export containing player names, squads, and goal totals.
+2) players stats.csv: An FBref-style export containing player names, squads, and goal totals.
+
 
 
 🛠️ Usage
